@@ -12,7 +12,7 @@ contextBridge.exposeInMainWorld("fuelGauge", {
   getProjects: () => ipcRenderer.invoke("projects:get"),
   scanProjects: () => ipcRenderer.invoke("projects:scan"),
   runProjectAction: (projectId, action) => ipcRenderer.invoke("projects:action", projectId, action),
-  ignoreProject: (projectId) => ipcRenderer.invoke("projects:ignore", projectId),
+  setProjectAccess: (projectId, access) => ipcRenderer.invoke("projects:access", projectId, access),
   restoreProject: (projectPath) => ipcRenderer.invoke("projects:restore", projectPath),
   cleanRepository: (projectId) => ipcRenderer.invoke("projects:clean", projectId),
   onUpdate: (callback) => {

@@ -20,7 +20,7 @@ let automationSettings;
 let automationTimer;
 let automationState = { status: "idle", message: "Automation is idle", history: [] };
 let projects = [];
-let ignoredProjectPaths = [];
+let projectAccessRules = {};
 let projectActionState = { status: "idle", message: "Select a project action" };
 
 const DEFAULT_AUTOMATION_SETTINGS = {
@@ -78,8 +78,8 @@ function projectsPath() {
   return path.join(app.getPath("userData"), "projects.json");
 }
 
-function ignoredProjectsPath() {
-  return path.join(app.getPath("userData"), "ignored-projects.json");
+function projectAccessPath() {
+  return path.join(app.getPath("userData"), "project-access.json");
 }
 
 function broadcastProjects() {
@@ -91,8 +91,14 @@ function broadcastProjects() {
 async function loadProjects() {
   try { projects = JSON.parse(await fs.readFile(projectsPath(), "utf8")); } catch { projects = []; }
   projects = projects.filter((project) => project.source === "codex" || (project.source === "repository" && project.isGit === true));
-  try { ignoredProjectPaths = JSON.parse(await fs.readFile(ignoredProjectsPath(), "utf8")); } catch { ignoredProjectPaths = []; }
-  return { projects, ignoredProjectPaths, state: projectActionState };
+  try { projectAccessRules = JSON.parse(await fs.readFile(projectAccessPath(), "utf8")); } catch {
+    let legacyIgnored = [];
+    try { legacyIgnored = JSON.parse(await fs.readFile(path.join(app.getPath("userData"), "ignored-projects.json"), "utf8")); } catch { /* no legacy exclusions */ }
+    projectAccessRules = Object.fromEntries(legacyIgnored.map((entry) => [normalizedProjectPath(entry), "exclude"]));
+    await saveProjectAccess();
+  }
+  projects = projects.filter((project) => projectAccess(project.path) !== "exclude").map((project) => ({ ...project, access: projectAccess(project.path) }));
+  return projectsSnapshot();
 }
 
 async function saveProjects() {
@@ -100,16 +106,20 @@ async function saveProjects() {
   broadcastProjects();
 }
 
-async function saveIgnoredProjects() {
-  await fs.writeFile(ignoredProjectsPath(), `${JSON.stringify(ignoredProjectPaths, null, 2)}\n`, "utf8");
+async function saveProjectAccess() {
+  await fs.writeFile(projectAccessPath(), `${JSON.stringify(projectAccessRules, null, 2)}\n`, "utf8");
 }
 
 function projectsSnapshot() {
-  return { projects, ignoredProjectPaths, state: projectActionState };
+  return { projects, projectAccessRules, state: projectActionState };
 }
 
 function normalizedProjectPath(value) {
   return path.resolve(value).toLowerCase();
+}
+
+function projectAccess(projectPath) {
+  return projectAccessRules[normalizedProjectPath(projectPath)] || "readWrite";
 }
 
 async function repositoryRoot(projectPath) {
@@ -182,36 +192,38 @@ async function scanManagedProjects() {
   const repositoryEntries = await Promise.all([...foundPaths.values()].map((item) => projectMetadata(item.path, item.count, item.lastActivity || null, true, null, "repository")));
   const uniqueProjects = new Map();
   for (const entry of [...nativeEntries, ...repositoryEntries]) uniqueProjects.set(entry.id, entry);
-  const ignored = new Set(ignoredProjectPaths.map(normalizedProjectPath));
-  projects = [...uniqueProjects.values()].filter((project) => !ignored.has(normalizedProjectPath(project.path)));
+  projects = [...uniqueProjects.values()].filter((project) => projectAccess(project.path) !== "exclude").map((project) => ({ ...project, access: projectAccess(project.path) }));
   projects.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0) || a.name.localeCompare(b.name));
   projectActionState = { status: "ready", message: `Found ${projects.length} Codex-managed projects` };
   await saveProjects();
   return projectsSnapshot();
 }
 
-async function ignoreProject(projectId) {
+async function setProjectAccess(projectId, access) {
+  if (!["readWrite", "readOnly", "exclude"].includes(access)) throw new Error("Unsupported folder access mode");
   const project = projects.find((entry) => entry.id === projectId);
   if (!project) throw new Error("Project was not found");
-  const result = await dialog.showMessageBox(mainWindow, { type: "question", buttons: ["Cancel", "Don't use this folder"], defaultId: 0, cancelId: 0, noLink: true, title: "Ignore project folder", message: `Stop using ${project.name}?`, detail: `${project.path}\n\nFuel Gauge will exclude this folder from future scans. You can restore it from Ignored folders.` });
-  if (result.response !== 1) return projectsSnapshot();
-  const normalized = normalizedProjectPath(project.path);
-  if (!ignoredProjectPaths.some((entry) => normalizedProjectPath(entry) === normalized)) ignoredProjectPaths.push(project.path);
-  projects = projects.filter((entry) => entry.id !== projectId);
-  await Promise.all([saveIgnoredProjects(), saveProjects()]);
+  if (access === "exclude") {
+    const result = await dialog.showMessageBox(mainWindow, { type: "question", buttons: ["Cancel", "Exclude folder"], defaultId: 0, cancelId: 0, noLink: true, title: "Exclude project folder", message: `Exclude ${project.name}?`, detail: `${project.path}\n\nFuel Gauge will hide this folder and will not run project tasks in it. You can restore access from Folder access.` });
+    if (result.response !== 1) return projectsSnapshot();
+  }
+  projectAccessRules[normalizedProjectPath(project.path)] = access;
+  if (access === "exclude") projects = projects.filter((entry) => entry.id !== projectId);
+  else project.access = access;
+  await Promise.all([saveProjectAccess(), saveProjects()]);
   return projectsSnapshot();
 }
 
-async function restoreIgnoredProject(projectPath) {
-  const normalized = normalizedProjectPath(projectPath);
-  ignoredProjectPaths = ignoredProjectPaths.filter((entry) => normalizedProjectPath(entry) !== normalized);
-  await saveIgnoredProjects();
+async function restoreExcludedProject(projectPath) {
+  projectAccessRules[normalizedProjectPath(projectPath)] = "readWrite";
+  await saveProjectAccess();
   return scanManagedProjects();
 }
 
 async function cleanRepository(projectId) {
   const project = projects.find((entry) => entry.id === projectId);
   if (!project?.isGit || project.source !== "repository") throw new Error("Only confirmed Git repositories can be cleaned");
+  if (projectAccess(project.path) !== "readWrite") throw new Error("Repository cleanup requires Read/Write access");
   const projectRoot = normalizedProjectPath(project.path);
   const runningAppPath = normalizedProjectPath(app.getAppPath());
   if (runningAppPath === projectRoot || runningAppPath.startsWith(`${projectRoot}${path.sep}`)) throw new Error("Fuel Gauge cannot clean the repository it is currently running from");
@@ -248,6 +260,7 @@ async function startProjectAction(projectId, action) {
   if (projectActionState.status === "running") throw new Error("Another project action is already running");
   const project = projects.find((entry) => entry.id === projectId);
   if (!project) throw new Error("Select a scanned project first");
+  if (projectAccess(project.path) !== "readWrite") throw new Error("This project is Read Only. Change folder access to Read/Write before running project actions.");
   if ((action === "seo" || action === "gsc") && !project.isWeb) throw new Error("SEO actions are available only for detected web projects");
   projectActionState = { status: "starting", message: `Starting ${action} for ${project.name}`, projectId, action };
   broadcastProjects();
@@ -263,7 +276,7 @@ async function startProjectAction(projectId, action) {
   });
   projectActionState = { status: "running", message: `${action === "roadmap" ? "Roadmap assembly" : action === "seo" ? "SEO audit" : "GSC optimization"} is running for ${project.name}`, projectId, action, threadId: threadResult.thread.id, turnId: turnResult.turn.id };
   broadcastProjects();
-  return { projects, state: projectActionState };
+  return projectsSnapshot();
 }
 
 async function completeProjectAction(turn) {
@@ -585,8 +598,8 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   ipcMain.handle("projects:get", () => projectsSnapshot());
   ipcMain.handle("projects:scan", () => scanManagedProjects());
   ipcMain.handle("projects:action", (_event, projectId, action) => startProjectAction(projectId, action));
-  ipcMain.handle("projects:ignore", (_event, projectId) => ignoreProject(projectId));
-  ipcMain.handle("projects:restore", (_event, projectPath) => restoreIgnoredProject(projectPath));
+  ipcMain.handle("projects:access", (_event, projectId, access) => setProjectAccess(projectId, access));
+  ipcMain.handle("projects:restore", (_event, projectPath) => restoreExcludedProject(projectPath));
   ipcMain.handle("projects:clean", (_event, projectId) => cleanRepository(projectId));
   await loadAutomationSettings();
   await loadProjects();

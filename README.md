@@ -11,7 +11,7 @@ Codex Fuel Gauge is a local desktop operations console for ChatGPT-backed Codex 
 - Runs a read-only SEO analysis that records evidence and recommendations in `SEO_AUDIT.md`.
 - Applies high-confidence GSC-focused repository improvements without claiming live Search Console access.
 - Keeps non-Git Codex projects visible and provides an in-app setup walkthrough for Codex desktop, the VS Code Codex extension, Git, and GitHub.
-- Persists ignored-folder exclusions and lets users restore them later.
+- Persists per-folder Read/Write, Read Only, or Exclude policies. Existing ignored folders migrate to Exclude automatically.
 - Cleans confirmed local Git repositories by moving them to the Windows Recycle Bin only after a Git-state summary and explicit confirmation; remote repositories are never deleted.
 
 ## Privacy and security

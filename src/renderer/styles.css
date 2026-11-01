@@ -77,7 +77,9 @@ article small { margin-top: auto; color: #7892a3; font-size: calc(var(--u) * .85
 .project-facts span, .project-run-status span { color: #6f91a6; font-size: calc(var(--u) * .68); letter-spacing: .08em; }
 .project-facts strong { font-size: calc(var(--u) * 1); }
 .project-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: calc(var(--u) * .55); }
-.project-maintenance { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--u) * .55); }
+.project-access { display: grid; grid-template-columns: repeat(3, 1fr); gap: calc(var(--u) * .45); }
+.project-access button.active { border-color: #35b8ff; background: #123f5d; color: white; }
+.project-maintenance { display: grid; grid-template-columns: 1fr; gap: calc(var(--u) * .55); }
 button.danger { border-color: #97394d; background: #511d29; color: #ffb1bf; }
 button.danger:hover { background: #732638; }
 .git-recommendation { display: flex; justify-content: space-between; align-items: center; gap: calc(var(--u) * .7); padding: calc(var(--u) * .45) calc(var(--u) * .65); border: 1px solid #8b6720; border-radius: calc(var(--u) * .7); background: #33270f; color: #ffd985; font-size: calc(var(--u) * .76); }

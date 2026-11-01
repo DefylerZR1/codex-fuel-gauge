@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import http from "node:http";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
@@ -20,6 +20,7 @@ let automationSettings;
 let automationTimer;
 let automationState = { status: "idle", message: "Automation is idle", history: [] };
 let projects = [];
+let ignoredProjectPaths = [];
 let projectActionState = { status: "idle", message: "Select a project action" };
 
 const DEFAULT_AUTOMATION_SETTINGS = {
@@ -77,20 +78,38 @@ function projectsPath() {
   return path.join(app.getPath("userData"), "projects.json");
 }
 
+function ignoredProjectsPath() {
+  return path.join(app.getPath("userData"), "ignored-projects.json");
+}
+
 function broadcastProjects() {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("projects:update", { projects, state: projectActionState });
+    mainWindow.webContents.send("projects:update", projectsSnapshot());
   }
 }
 
 async function loadProjects() {
   try { projects = JSON.parse(await fs.readFile(projectsPath(), "utf8")); } catch { projects = []; }
-  return { projects, state: projectActionState };
+  projects = projects.filter((project) => project.source === "codex" || (project.source === "repository" && project.isGit === true));
+  try { ignoredProjectPaths = JSON.parse(await fs.readFile(ignoredProjectsPath(), "utf8")); } catch { ignoredProjectPaths = []; }
+  return { projects, ignoredProjectPaths, state: projectActionState };
 }
 
 async function saveProjects() {
   await fs.writeFile(projectsPath(), `${JSON.stringify(projects, null, 2)}\n`, "utf8");
   broadcastProjects();
+}
+
+async function saveIgnoredProjects() {
+  await fs.writeFile(ignoredProjectsPath(), `${JSON.stringify(ignoredProjectPaths, null, 2)}\n`, "utf8");
+}
+
+function projectsSnapshot() {
+  return { projects, ignoredProjectPaths, state: projectActionState };
+}
+
+function normalizedProjectPath(value) {
+  return path.resolve(value).toLowerCase();
 }
 
 async function repositoryRoot(projectPath) {
@@ -163,11 +182,58 @@ async function scanManagedProjects() {
   const repositoryEntries = await Promise.all([...foundPaths.values()].map((item) => projectMetadata(item.path, item.count, item.lastActivity || null, true, null, "repository")));
   const uniqueProjects = new Map();
   for (const entry of [...nativeEntries, ...repositoryEntries]) uniqueProjects.set(entry.id, entry);
-  projects = [...uniqueProjects.values()];
+  const ignored = new Set(ignoredProjectPaths.map(normalizedProjectPath));
+  projects = [...uniqueProjects.values()].filter((project) => !ignored.has(normalizedProjectPath(project.path)));
   projects.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0) || a.name.localeCompare(b.name));
   projectActionState = { status: "ready", message: `Found ${projects.length} Codex-managed projects` };
   await saveProjects();
-  return { projects, state: projectActionState };
+  return projectsSnapshot();
+}
+
+async function ignoreProject(projectId) {
+  const project = projects.find((entry) => entry.id === projectId);
+  if (!project) throw new Error("Project was not found");
+  const result = await dialog.showMessageBox(mainWindow, { type: "question", buttons: ["Cancel", "Don't use this folder"], defaultId: 0, cancelId: 0, noLink: true, title: "Ignore project folder", message: `Stop using ${project.name}?`, detail: `${project.path}\n\nFuel Gauge will exclude this folder from future scans. You can restore it from Ignored folders.` });
+  if (result.response !== 1) return projectsSnapshot();
+  const normalized = normalizedProjectPath(project.path);
+  if (!ignoredProjectPaths.some((entry) => normalizedProjectPath(entry) === normalized)) ignoredProjectPaths.push(project.path);
+  projects = projects.filter((entry) => entry.id !== projectId);
+  await Promise.all([saveIgnoredProjects(), saveProjects()]);
+  return projectsSnapshot();
+}
+
+async function restoreIgnoredProject(projectPath) {
+  const normalized = normalizedProjectPath(projectPath);
+  ignoredProjectPaths = ignoredProjectPaths.filter((entry) => normalizedProjectPath(entry) !== normalized);
+  await saveIgnoredProjects();
+  return scanManagedProjects();
+}
+
+async function cleanRepository(projectId) {
+  const project = projects.find((entry) => entry.id === projectId);
+  if (!project?.isGit || project.source !== "repository") throw new Error("Only confirmed Git repositories can be cleaned");
+  const projectRoot = normalizedProjectPath(project.path);
+  const runningAppPath = normalizedProjectPath(app.getAppPath());
+  if (runningAppPath === projectRoot || runningAppPath.startsWith(`${projectRoot}${path.sep}`)) throw new Error("Fuel Gauge cannot clean the repository it is currently running from");
+  if (path.parse(project.path).root === path.resolve(project.path)) throw new Error("Drive roots cannot be cleaned");
+  let dirty = [];
+  let upstreamSummary = "No upstream branch is configured.";
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", project.path, "status", "--porcelain"], { windowsHide: true, timeout: 5_000 });
+    dirty = stdout.trim().split(/\r?\n/).filter(Boolean);
+  } catch { throw new Error("Repository status could not be verified"); }
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", project.path, "rev-list", "--left-right", "--count", "@{upstream}...HEAD"], { windowsHide: true, timeout: 5_000 });
+    const [behind, ahead] = stdout.trim().split(/\s+/).map(Number);
+    upstreamSummary = `${ahead || 0} unpushed commit(s); ${behind || 0} commit(s) behind upstream.`;
+  } catch { /* display the no-upstream warning */ }
+  const detail = `${project.path}\n\nGit status: ${dirty.length ? `${dirty.length} changed or untracked file(s)` : "clean"}\n${upstreamSummary}\n\nThis moves the entire repository to the Windows Recycle Bin. It does not delete the remote repository.`;
+  const result = await dialog.showMessageBox(mainWindow, { type: dirty.length ? "warning" : "question", buttons: ["Cancel", "Move to Recycle Bin"], defaultId: 0, cancelId: 0, noLink: true, title: "Clean old repository", message: `Clean ${project.name}?`, detail });
+  if (result.response !== 1) return projectsSnapshot();
+  await shell.trashItem(project.path);
+  projects = projects.filter((entry) => entry.id !== projectId);
+  await saveProjects();
+  return projectsSnapshot();
 }
 
 function projectActionPrompt(action, project) {
@@ -516,9 +582,12 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   ipcMain.handle("automation:get", () => automationSnapshot());
   ipcMain.handle("automation:save", (_event, settings) => saveAutomationSettings(settings));
   ipcMain.handle("automation:run", () => startAutomationRun({ manual: true }));
-  ipcMain.handle("projects:get", () => ({ projects, state: projectActionState }));
+  ipcMain.handle("projects:get", () => projectsSnapshot());
   ipcMain.handle("projects:scan", () => scanManagedProjects());
   ipcMain.handle("projects:action", (_event, projectId, action) => startProjectAction(projectId, action));
+  ipcMain.handle("projects:ignore", (_event, projectId) => ignoreProject(projectId));
+  ipcMain.handle("projects:restore", (_event, projectPath) => restoreIgnoredProject(projectPath));
+  ipcMain.handle("projects:clean", (_event, projectId) => cleanRepository(projectId));
   await loadAutomationSettings();
   await loadProjects();
   startApi();

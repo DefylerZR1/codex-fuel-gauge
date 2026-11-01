@@ -16,6 +16,8 @@ const elements = {
   projectRoadmap: $("#project-roadmap"), projectType: $("#project-type"), projectActionState: $("#project-action-state"),
   projectActionMessage: $("#project-action-message"),
   gitRecommendation: $("#git-recommendation"), openGitGuide: $("#open-git-guide"), gitGuide: $("#git-guide"), closeGitGuide: $("#close-git-guide"),
+  ignoredProjects: $("#ignored-projects"), ignoredGuide: $("#ignored-guide"), closeIgnored: $("#close-ignored"), ignoredList: $("#ignored-list"),
+  ignoreProject: $("#ignore-project"), cleanRepository: $("#clean-repository"),
 };
 
 let latest;
@@ -206,6 +208,8 @@ function renderProjectDetail() {
   elements.projectRoadmap.textContent = project.roadmapFile || "Missing";
   elements.projectType.textContent = project.isWeb ? "Web project" : "Project";
   elements.gitRecommendation.hidden = project.isGit !== false;
+  elements.cleanRepository.disabled = !(project.isGit && project.source === "repository");
+  elements.cleanRepository.title = elements.cleanRepository.disabled ? "Only confirmed Git repositories can be cleaned" : "Move this local repository to the Recycle Bin";
   elements.projectBadges.replaceChildren();
   for (const label of [project.source === "codex" ? "Codex project" : "Repository", project.isGit === false ? "No Git" : "Git", project.isWeb ? "Web" : "Local", project.roadmapFile ? "Roadmap" : "Needs roadmap"]) {
     const badge = document.createElement("span"); badge.textContent = label; elements.projectBadges.append(badge);
@@ -224,6 +228,7 @@ function renderProjects(snapshot) {
   projectPage = Math.min(projectPage, pageCount - 1);
   if (!projects.some((project) => project.id === selectedProjectId)) selectedProjectId = projects[0]?.id;
   elements.projectCount.textContent = `${projects.length} managed project${projects.length === 1 ? "" : "s"}`;
+  elements.ignoredProjects.textContent = `Ignored (${projectSnapshot.ignoredProjectPaths?.length || 0})`;
   elements.projectList.replaceChildren();
   const pageProjects = projects.slice(projectPage * PROJECTS_PER_PAGE, (projectPage + 1) * PROJECTS_PER_PAGE);
   if (!pageProjects.length) {
@@ -283,6 +288,31 @@ document.querySelectorAll("[data-project-action]").forEach((button) => button.ad
 }));
 elements.openGitGuide.addEventListener("click", () => elements.gitGuide.showModal());
 elements.closeGitGuide.addEventListener("click", () => elements.gitGuide.close());
+elements.ignoreProject.addEventListener("click", async () => {
+  if (!selectedProjectId) return;
+  const projectId = selectedProjectId;
+  try { selectedProjectId = undefined; renderProjects(await window.fuelGauge.ignoreProject(projectId)); }
+  catch (error) { elements.projectActionMessage.textContent = error.message; }
+});
+elements.cleanRepository.addEventListener("click", async () => {
+  if (!selectedProjectId) return;
+  const projectId = selectedProjectId;
+  try { selectedProjectId = undefined; renderProjects(await window.fuelGauge.cleanRepository(projectId)); }
+  catch (error) { elements.projectActionMessage.textContent = error.message; }
+});
+function renderIgnoredProjects() {
+  elements.ignoredList.replaceChildren();
+  for (const projectPath of projectSnapshot.ignoredProjectPaths || []) {
+    const row = document.createElement("div"); row.className = "ignored-item";
+    const label = document.createElement("span"); label.textContent = projectPath; label.title = projectPath;
+    const restore = document.createElement("button"); restore.type = "button"; restore.className = "secondary"; restore.textContent = "Use again";
+    restore.addEventListener("click", async () => { renderProjects(await window.fuelGauge.restoreProject(projectPath)); renderIgnoredProjects(); });
+    row.append(label, restore); elements.ignoredList.append(row);
+  }
+  if (!elements.ignoredList.children.length) { const empty = document.createElement("p"); empty.className = "empty-state"; empty.textContent = "No folders are currently ignored."; elements.ignoredList.append(empty); }
+}
+elements.ignoredProjects.addEventListener("click", () => { renderIgnoredProjects(); elements.ignoredGuide.showModal(); });
+elements.closeIgnored.addEventListener("click", () => elements.ignoredGuide.close());
 
 if (window.fuelGauge?.onUpdate) window.fuelGauge.onUpdate(render);
 if (window.fuelGauge?.onUpdateResult) window.fuelGauge.onUpdateResult(renderUpdateResult);

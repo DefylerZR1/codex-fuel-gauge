@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:47831" />
     <title>Codex Fuel Gauge</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -16,54 +16,26 @@
         </div>
         <span id="status" class="status">Connecting</span>
       </header>
-
-      <section class="gauge-card">
-        <div class="gauge" id="gauge" style="--used: 0">
-          <div class="gauge-core">
-            <strong id="remaining">--%</strong>
-            <span>remaining</span>
+      <section class="dashboard">
+        <section class="gauge-card">
+          <div class="gauge" id="gauge" style="--used: 0">
+            <div class="gauge-core"><strong id="remaining">--%</strong><span>remaining</span></div>
           </div>
-        </div>
-        <div class="gauge-meta">
-          <p>Weekly allowance</p>
-          <h2 id="used">--% used</h2>
-          <p id="reset">Reset time unavailable</p>
-        </div>
+          <div class="gauge-meta"><p>Weekly allowance</p><h2 id="used">--% used</h2><p id="reset">Reset time unavailable</p></div>
+        </section>
+        <section class="grid">
+          <article><span>Daily target</span><strong>10–12%</strong><small id="pace">Waiting for telemetry</small></article>
+          <article><span>Time remaining</span><strong id="countdown">--</strong><small>until weekly refill</small></article>
+          <article><span>Suggested reserve</span><strong>3–5%</strong><small>for urgent work</small></article>
+          <article><span>Local API</span><strong class="api-port">:47831</strong><small>GET /api/usage</small></article>
+        </section>
       </section>
-
-      <section class="grid">
-        <article>
-          <span>Daily target</span>
-          <strong>10–12%</strong>
-          <small id="pace">Waiting for telemetry</small>
-        </article>
-        <article>
-          <span>Time remaining</span>
-          <strong id="countdown">--</strong>
-          <small>until weekly refill</small>
-        </article>
-        <article>
-          <span>Suggested reserve</span>
-          <strong>3–5%</strong>
-          <small>for urgent work</small>
-        </article>
-        <article>
-          <span>Local API</span>
-          <strong class="api-port">:47831</strong>
-          <small>GET /api/usage</small>
-        </article>
-      </section>
-
       <section class="details">
         <div><span>Plan</span><strong id="plan">—</strong></div>
         <div><span>Window</span><strong id="window">—</strong></div>
         <div><span>Last update</span><strong id="updated">—</strong></div>
       </section>
-
-      <footer>
-        <p id="message">Starting Codex App Server…</p>
-        <button id="refresh" type="button">Refresh telemetry</button>
-      </footer>
+      <footer><p id="message">Starting Codex App Server…</p><button id="refresh" type="button">Refresh telemetry</button></footer>
     </main>
     <script src="renderer.js"></script>
   </body>

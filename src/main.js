@@ -68,10 +68,11 @@ function makeTrayIcon() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 520,
-    height: 760,
-    minWidth: 430,
-    minHeight: 640,
+    width: 960,
+    height: 540,
+    minWidth: 640,
+    minHeight: 360,
+    useContentSize: true,
     backgroundColor: "#07101d",
     title: "Codex Fuel Gauge",
     show: false,
@@ -83,6 +84,7 @@ function createWindow() {
       sandbox: true,
     },
   });
+  mainWindow.setAspectRatio(16 / 9);
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.on("close", (event) => {

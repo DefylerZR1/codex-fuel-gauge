@@ -120,10 +120,10 @@ function startApi() {
 app.whenReady().then(async () => {
   tray = new Tray(makeTrayIcon());
   tray.on("click", () => showWindow());
-  createWindow();
-  startApi();
   ipcMain.handle("telemetry:get", () => latestSnapshot);
   ipcMain.handle("telemetry:refresh", () => client.refresh());
+  startApi();
+  createWindow();
   await client.start().catch((error) => {
     latestSnapshot = { ...latestSnapshot, status: { state: "error", message: error.message } };
     broadcast();

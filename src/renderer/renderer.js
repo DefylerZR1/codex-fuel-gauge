@@ -14,6 +14,31 @@ const elements = {
 };
 
 let latest;
+const apiUrl = "http://127.0.0.1:47831/api/usage";
+
+async function getSnapshot() {
+  if (window.fuelGauge?.getSnapshot) {
+    try {
+      return await window.fuelGauge.getSnapshot();
+    } catch {
+      // Fall through to the localhost API if the Electron bridge is unavailable.
+    }
+  }
+  const response = await fetch(apiUrl, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Telemetry API returned ${response.status}`);
+  return response.json();
+}
+
+async function refreshSnapshot() {
+  if (window.fuelGauge?.refresh) {
+    try {
+      await window.fuelGauge.refresh();
+    } catch {
+      // The API read below will still return the latest good snapshot.
+    }
+  }
+  return getSnapshot();
+}
 
 function allBuckets(data) {
   const mapped = Object.values(data?.rateLimitsByLimitId || {});
@@ -82,14 +107,18 @@ elements.refresh.addEventListener("click", async () => {
   elements.refresh.disabled = true;
   elements.refresh.textContent = "Refreshing…";
   try {
-    await window.fuelGauge.refresh();
-    render(await window.fuelGauge.getSnapshot());
+    render(await refreshSnapshot());
   } finally {
     elements.refresh.disabled = false;
     elements.refresh.textContent = "Refresh telemetry";
   }
 });
 
-window.fuelGauge.onUpdate(render);
-window.fuelGauge.getSnapshot().then(render);
+if (window.fuelGauge?.onUpdate) window.fuelGauge.onUpdate(render);
+getSnapshot().then(render).catch((error) => {
+  elements.status.textContent = "Offline";
+  elements.status.className = "status error";
+  elements.message.textContent = error.message;
+});
+setInterval(() => getSnapshot().then(render).catch(() => {}), 15_000);
 setInterval(() => latest && render(latest), 30_000);

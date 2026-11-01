@@ -1,5 +1,7 @@
 # Codex Fuel Gauge
 
+See [ROADMAP.md](ROADMAP.md) for the planned project-roadmap, automation, usage-budgeting, and FYI integration modules.
+
 Codex Fuel Gauge is a local, read-only desktop monitor for ChatGPT-backed Codex usage. It reads supported telemetry from Codex App Server and displays the remaining allowance, quota-window reset time, and a daily utilization target.
 
 ## Privacy and security

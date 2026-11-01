@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,8 @@ import { AppServerClient } from "./app-server-client.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const API_PORT = Number(process.env.CODEX_FUEL_GAUGE_PORT || 47831);
+const RELEASE_API = "https://api.github.com/repos/DefylerZR1/codex-fuel-gauge/releases/latest";
+const RELEASE_URL_PREFIX = "https://github.com/DefylerZR1/codex-fuel-gauge/releases/";
 let mainWindow;
 let tray;
 let apiServer;
@@ -50,6 +52,48 @@ function weeklyWindow() {
     .sort((a, b) => Number(b.windowDurationMins || 0) - Number(a.windowDurationMins || 0))[0] || null;
 }
 
+function versionParts(version) {
+  return String(version).replace(/^v/i, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+}
+
+function isNewerVersion(candidate, current) {
+  const candidateParts = versionParts(candidate);
+  const currentParts = versionParts(current);
+  const length = Math.max(candidateParts.length, currentParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (candidateParts[index] || 0) - (currentParts[index] || 0);
+    if (difference !== 0) return difference > 0;
+  }
+  return false;
+}
+
+async function checkForUpdates() {
+  const response = await fetch(RELEASE_API, {
+    headers: { Accept: "application/vnd.github+json", "User-Agent": "Codex-Fuel-Gauge" },
+  });
+  if (!response.ok) throw new Error(`GitHub update check failed (${response.status})`);
+  const release = await response.json();
+  const currentVersion = app.getVersion();
+  const latestVersion = String(release.tag_name || release.name || "").replace(/^v/i, "");
+  if (!latestVersion) throw new Error("The latest release did not include a version number");
+  return {
+    currentVersion,
+    latestVersion,
+    updateAvailable: isNewerVersion(latestVersion, currentVersion),
+    releaseUrl: release.html_url,
+  };
+}
+
+async function checkForUpdatesFromTray() {
+  showWindow();
+  try {
+    const result = await checkForUpdates();
+    mainWindow?.webContents.send("update:result", result);
+  } catch (error) {
+    mainWindow?.webContents.send("update:result", { error: error.message });
+  }
+}
+
 function updateTray() {
   if (!tray) return;
   const window = weeklyWindow();
@@ -62,6 +106,7 @@ function updateTray() {
     { type: "separator" },
     { label: "Open Fuel Gauge", click: () => showWindow() },
     { label: "Refresh", click: () => client.refresh().catch(() => {}) },
+    { label: "Check for updates", click: () => checkForUpdatesFromTray() },
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]));
@@ -133,6 +178,11 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   tray.on("click", () => showWindow());
   ipcMain.handle("telemetry:get", () => latestSnapshot);
   ipcMain.handle("telemetry:refresh", () => client.refresh());
+  ipcMain.handle("update:check", () => checkForUpdates());
+  ipcMain.handle("update:open", (_event, url) => {
+    if (typeof url !== "string" || !url.startsWith(RELEASE_URL_PREFIX)) throw new Error("Invalid release URL");
+    return shell.openExternal(url);
+  });
   startApi();
   createWindow();
   await client.start().catch((error) => {

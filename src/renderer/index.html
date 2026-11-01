@@ -35,7 +35,13 @@
         <div><span>Window</span><strong id="window">—</strong></div>
         <div><span>Last update</span><strong id="updated">—</strong></div>
       </section>
-      <footer><p id="message">Starting Codex App Server…</p><button id="refresh" type="button">Refresh telemetry</button></footer>
+      <footer>
+        <p id="message">Starting Codex App Server…</p>
+        <div class="footer-actions">
+          <button id="check-updates" class="secondary" type="button">Check for updates</button>
+          <button id="refresh" type="button">Refresh telemetry</button>
+        </div>
+      </footer>
     </main>
     <script src="renderer.js"></script>
   </body>

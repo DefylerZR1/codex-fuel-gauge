@@ -37,6 +37,9 @@ article small { margin-top: auto; color: #7892a3; font-size: calc(var(--u) * .95
 .details strong { font-size: calc(var(--u) * 1.05); white-space: nowrap; }
 footer { min-height: 0; display: flex; align-items: center; gap: calc(var(--u) * 1.4); }
 footer p { min-width: 0; flex: 1; margin: 0; color: #7892a3; font-size: calc(var(--u) * .95); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.footer-actions { display: flex; gap: calc(var(--u) * .7); flex: 0 0 auto; }
 button { width: auto; flex: 0 0 auto; padding: calc(var(--u) * .8) calc(var(--u) * 1.5); border: 1px solid #2c89bb; border-radius: calc(var(--u) * .9); background: #0b5f8d; color: white; font: inherit; font-size: calc(var(--u) * 1.05); font-weight: 700; cursor: pointer; }
 button:hover { background: #0878b2; }
+button.secondary { border-color: #28506a; background: #10283a; color: #9cc9e4; }
+button.secondary:hover { background: #173b54; }
 button:disabled { opacity: .55; cursor: wait; }

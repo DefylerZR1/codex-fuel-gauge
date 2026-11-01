@@ -11,9 +11,11 @@ const elements = {
   updated: document.querySelector("#updated"),
   message: document.querySelector("#message"),
   refresh: document.querySelector("#refresh"),
+  checkUpdates: document.querySelector("#check-updates"),
 };
 
 let latest;
+let updateUrl;
 const apiUrl = "http://127.0.0.1:47831/api/usage";
 
 async function getSnapshot() {
@@ -103,6 +105,24 @@ function render(snapshot) {
     : "Room for additional useful work";
 }
 
+function renderUpdateResult(result) {
+  elements.checkUpdates.disabled = false;
+  if (result?.error) {
+    elements.message.textContent = result.error;
+    elements.checkUpdates.textContent = "Try update check again";
+    return;
+  }
+  if (result?.updateAvailable) {
+    updateUrl = result.releaseUrl;
+    elements.message.textContent = `Version ${result.latestVersion} is available`;
+    elements.checkUpdates.textContent = `Download v${result.latestVersion}`;
+    return;
+  }
+  updateUrl = undefined;
+  elements.message.textContent = `Version ${result?.currentVersion || "current"} is up to date`;
+  elements.checkUpdates.textContent = "Check for updates";
+}
+
 elements.refresh.addEventListener("click", async () => {
   elements.refresh.disabled = true;
   elements.refresh.textContent = "Refreshing…";
@@ -114,7 +134,23 @@ elements.refresh.addEventListener("click", async () => {
   }
 });
 
+elements.checkUpdates.addEventListener("click", async () => {
+  if (updateUrl) {
+    await window.fuelGauge.openUpdate(updateUrl);
+    return;
+  }
+  elements.checkUpdates.disabled = true;
+  elements.checkUpdates.textContent = "Checking…";
+  elements.message.textContent = "Checking GitHub for the latest release";
+  try {
+    renderUpdateResult(await window.fuelGauge.checkForUpdates());
+  } catch (error) {
+    renderUpdateResult({ error: error.message });
+  }
+});
+
 if (window.fuelGauge?.onUpdate) window.fuelGauge.onUpdate(render);
+if (window.fuelGauge?.onUpdateResult) window.fuelGauge.onUpdateResult(renderUpdateResult);
 getSnapshot().then(render).catch((error) => {
   elements.status.textContent = "Offline";
   elements.status.className = "status error";

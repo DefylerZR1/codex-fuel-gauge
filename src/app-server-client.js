@@ -8,9 +8,10 @@ const CLIENT_INFO = {
 };
 
 export class AppServerClient {
-  constructor({ onRateLimits, onStatus } = {}) {
+  constructor({ onRateLimits, onStatus, onEvent } = {}) {
     this.onRateLimits = onRateLimits ?? (() => {});
     this.onStatus = onStatus ?? (() => {});
+    this.onEvent = onEvent ?? (() => {});
     this.pending = new Map();
     this.nextId = 1;
     this.proc = null;
@@ -107,6 +108,8 @@ export class AppServerClient {
       else pending.resolve(message.result);
       return;
     }
+
+    this.onEvent(message);
 
     if (message.method === "account/rateLimits/updated") {
       this.refresh().catch((error) => {

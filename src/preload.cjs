@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld("fuelGauge", {
   refresh: () => ipcRenderer.invoke("telemetry:refresh"),
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   openUpdate: (url) => ipcRenderer.invoke("update:open", url),
+  readRoadmap: () => ipcRenderer.invoke("roadmap:read"),
+  getAutomation: () => ipcRenderer.invoke("automation:get"),
+  saveAutomation: (settings) => ipcRenderer.invoke("automation:save", settings),
+  runAutomation: () => ipcRenderer.invoke("automation:run"),
   onUpdate: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
     ipcRenderer.on("telemetry:update", listener);
@@ -14,5 +18,10 @@ contextBridge.exposeInMainWorld("fuelGauge", {
     const listener = (_event, result) => callback(result);
     ipcRenderer.on("update:result", listener);
     return () => ipcRenderer.removeListener("update:result", listener);
+  },
+  onAutomationUpdate: (callback) => {
+    const listener = (_event, snapshot) => callback(snapshot);
+    ipcRenderer.on("automation:update", listener);
+    return () => ipcRenderer.removeListener("automation:update", listener);
   },
 });

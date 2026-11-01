@@ -10,37 +10,66 @@
   <body>
     <main>
       <header>
-        <div>
-          <p class="eyebrow">LIVE CODEX TELEMETRY</p>
-          <h1>Fuel Gauge</h1>
-        </div>
+        <div class="brand"><p class="eyebrow">LIVE CODEX OPERATIONS</p><h1>Fuel Gauge</h1></div>
+        <nav class="tabs" aria-label="Fuel Gauge sections">
+          <button class="tab active" data-view="gauge" type="button">Gauge</button>
+          <button class="tab" data-view="roadmap" type="button">Roadmap</button>
+          <button class="tab" data-view="automation" type="button">Automation</button>
+        </nav>
         <span id="status" class="status">Connecting</span>
       </header>
-      <section class="dashboard">
-        <section class="gauge-card">
-          <div class="gauge" id="gauge" style="--used: 0">
-            <div class="gauge-core"><strong id="remaining">--%</strong><span>remaining</span></div>
+
+      <section id="view-gauge" class="view active">
+        <section class="dashboard">
+          <section class="gauge-card">
+            <div class="gauge" id="gauge" style="--used: 0"><div class="gauge-core"><strong id="remaining">--%</strong><span>remaining</span></div></div>
+            <div class="gauge-meta"><p>Weekly allowance</p><h2 id="used">--% used</h2><p id="reset">Reset time unavailable</p></div>
+          </section>
+          <section class="metric-grid">
+            <article><span>Daily target</span><strong>10–12%</strong><small id="pace">Waiting for telemetry</small></article>
+            <article><span>Time remaining</span><strong id="countdown">--</strong><small>until weekly refill</small></article>
+            <article><span>Suggested reserve</span><strong>3–5%</strong><small>for urgent work</small></article>
+            <article><span>Local API</span><strong class="api-port">:47831</strong><small>GET /api/usage</small></article>
+          </section>
+        </section>
+        <section class="details">
+          <div><span>Plan</span><strong id="plan">—</strong></div>
+          <div><span>Window</span><strong id="window">—</strong></div>
+          <div><span>Last update</span><strong id="updated">—</strong></div>
+        </section>
+      </section>
+
+      <section id="view-roadmap" class="view split-view">
+        <aside><p class="panel-label">ROADMAP.MD</p><div id="roadmap-nav" class="roadmap-nav"></div></aside>
+        <article class="roadmap-card"><h2 id="roadmap-title">Loading roadmap…</h2><div id="roadmap-content"></div></article>
+      </section>
+
+      <section id="view-automation" class="view automation-view">
+        <form id="automation-form">
+          <div class="automation-grid">
+            <label class="toggle-field"><input id="auto-enabled" type="checkbox" /><span><b>Enable scheduled burn</b><small>Run useful roadmap work automatically</small></span></label>
+            <label>Execution mode<select id="auto-mode"><option value="plan">Plan only · read-only</option><option value="autonomous">Autonomous · workspace write</option></select></label>
+            <label>Daily start<input id="auto-time" type="time" /></label>
+            <label>Daily target<input id="auto-target" type="number" min="1" max="25" step="1" /></label>
+            <label>Emergency reserve<input id="auto-reserve" type="number" min="0" max="25" step="1" /></label>
+            <label>Pre-reset window<input id="auto-prereset" type="number" min="0" max="48" step="1" /></label>
+            <label>Max runs/day<input id="auto-max-runs" type="number" min="1" max="10" step="1" /></label>
+            <label>Cooldown minutes<input id="auto-cooldown" type="number" min="1" max="240" step="1" /></label>
+            <label class="wide">Project folder<input id="auto-project" type="text" placeholder="C:\path\to\project" /></label>
+            <label class="wide">Roadmap objective<textarea id="auto-objective" rows="2"></textarea></label>
+            <label class="toggle-field wide"><input id="auto-push" type="checkbox" /><span><b>Allow verified Git push</b><small>Publishing, messaging, spending, and other external changes remain prohibited</small></span></label>
           </div>
-          <div class="gauge-meta"><p>Weekly allowance</p><h2 id="used">--% used</h2><p id="reset">Reset time unavailable</p></div>
-        </section>
-        <section class="grid">
-          <article><span>Daily target</span><strong>10–12%</strong><small id="pace">Waiting for telemetry</small></article>
-          <article><span>Time remaining</span><strong id="countdown">--</strong><small>until weekly refill</small></article>
-          <article><span>Suggested reserve</span><strong>3–5%</strong><small>for urgent work</small></article>
-          <article><span>Local API</span><strong class="api-port">:47831</strong><small>GET /api/usage</small></article>
+        </form>
+        <section class="automation-status">
+          <div><span>RUNNER</span><strong id="auto-state">Idle</strong><small id="auto-message">Automation is idle</small></div>
+          <div><span>TODAY</span><strong id="auto-runs">0 runs</strong><small id="auto-cycle">No cycle started</small></div>
+          <div class="automation-actions"><button id="auto-save" class="secondary" type="button">Save configuration</button><button id="auto-run" type="button">Run now</button></div>
         </section>
       </section>
-      <section class="details">
-        <div><span>Plan</span><strong id="plan">—</strong></div>
-        <div><span>Window</span><strong id="window">—</strong></div>
-        <div><span>Last update</span><strong id="updated">—</strong></div>
-      </section>
+
       <footer>
         <p id="message">Starting Codex App Server…</p>
-        <div class="footer-actions">
-          <button id="check-updates" class="secondary" type="button">Check for updates</button>
-          <button id="refresh" type="button">Refresh telemetry</button>
-        </div>
+        <div class="footer-actions"><button id="check-updates" class="secondary" type="button">Check for updates</button><button id="refresh" type="button">Refresh telemetry</button></div>
       </footer>
     </main>
     <script src="renderer.js"></script>

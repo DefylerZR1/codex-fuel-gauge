@@ -11,6 +11,9 @@ let tray;
 let apiServer;
 let latestSnapshot = { status: { state: "starting", message: "Starting" }, data: null };
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
+
 function broadcast() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("telemetry:update", latestSnapshot);
@@ -51,9 +54,12 @@ function updateTray() {
   if (!tray) return;
   const window = weeklyWindow();
   const remaining = window?.usedPercent == null ? null : Math.max(0, 100 - Number(window.usedPercent));
-  tray.setToolTip(remaining == null ? "Codex Fuel Gauge" : `Codex Fuel Gauge — ${remaining.toFixed(0)}% left`);
+  const resetLabel = window?.resetsAt ? new Date(window.resetsAt * 1000).toLocaleString() : "Unavailable";
+  tray.setToolTip(remaining == null ? "Codex Fuel Gauge" : `Codex Fuel Gauge — ${remaining.toFixed(0)}% remaining`);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: remaining == null ? "Usage unavailable" : `${remaining.toFixed(0)}% weekly usage remaining`, enabled: false },
+    { label: `Reset: ${resetLabel}`, enabled: false },
+    { type: "separator" },
     { label: "Open Fuel Gauge", click: () => showWindow() },
     { label: "Refresh", click: () => client.refresh().catch(() => {}) },
     { type: "separator" },
@@ -62,8 +68,8 @@ function updateTray() {
 }
 
 function makeTrayIcon() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="8" fill="#0b1220"/><path d="M6 20h4l3-9 5 14 3-8h5" fill="none" stroke="#35b8ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`).resize({ width: 16, height: 16 });
+  const source = nativeImage.createFromPath(path.join(__dirname, "assets", "beowulf-shield.png"));
+  return source.resize({ width: 32, height: 32, quality: "best" });
 }
 
 function createWindow() {
@@ -97,6 +103,7 @@ function createWindow() {
 
 function showWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+  if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
 }
@@ -119,7 +126,9 @@ function startApi() {
   apiServer.listen(API_PORT, "127.0.0.1");
 }
 
-app.whenReady().then(async () => {
+app.on("second-instance", () => showWindow());
+
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
   tray = new Tray(makeTrayIcon());
   tray.on("click", () => showWindow());
   ipcMain.handle("telemetry:get", () => latestSnapshot);

@@ -1,0 +1,37 @@
+{
+  "name": "codex-fuel-gauge",
+  "version": "0.1.0",
+  "description": "A local, read-only Codex usage monitor for Windows.",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "check:telemetry": "node scripts/check-telemetry.js",
+    "pack:win": "electron-builder --win portable",
+    "test": "node --test"
+  },
+  "author": "Jeff Parker",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^39.8.10",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.codexfuelgauge.app",
+    "productName": "Codex Fuel Gauge",
+    "artifactName": "Codex-Fuel-Gauge-${version}-portable.${ext}",
+    "files": [
+      "src/**/*",
+      "package.json",
+      "README.md",
+      "LICENSE"
+    ],
+    "win": {
+      "target": "portable"
+    }
+  },
+  "allowScripts": {
+    "electron@39.8.10": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

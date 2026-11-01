@@ -46,7 +46,7 @@ export class AppServerClient {
     this.rl = readline.createInterface({ input: this.proc.stdout });
     this.rl.on("line", (line) => this.handleLine(line));
 
-    await this.request("initialize", { clientInfo: CLIENT_INFO });
+    await this.request("initialize", { clientInfo: CLIENT_INFO, capabilities: { experimentalApi: true } });
     this.notify("initialized", {});
     this.onStatus({ state: "connected", message: "Live telemetry connected" });
     await this.refresh();

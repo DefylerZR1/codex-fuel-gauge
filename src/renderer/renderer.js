@@ -9,12 +9,23 @@ const elements = {
   autoCooldown: $("#auto-cooldown"), autoProject: $("#auto-project"), autoObjective: $("#auto-objective"),
   autoPush: $("#auto-push"), autoState: $("#auto-state"), autoMessage: $("#auto-message"), autoRuns: $("#auto-runs"),
   autoCycle: $("#auto-cycle"), autoSave: $("#auto-save"), autoRun: $("#auto-run"),
+  scanProjects: $("#scan-projects"), projectCount: $("#project-count"), projectList: $("#project-list"),
+  projectsPrev: $("#projects-prev"), projectsNext: $("#projects-next"), projectsPage: $("#projects-page"),
+  projectEmpty: $("#project-empty"), projectSelected: $("#project-selected"), projectName: $("#project-name"),
+  projectPath: $("#project-path"), projectBadges: $("#project-badges"), projectThreads: $("#project-threads"),
+  projectRoadmap: $("#project-roadmap"), projectType: $("#project-type"), projectActionState: $("#project-action-state"),
+  projectActionMessage: $("#project-action-message"),
+  gitRecommendation: $("#git-recommendation"), openGitGuide: $("#open-git-guide"), gitGuide: $("#git-guide"), closeGitGuide: $("#close-git-guide"),
 };
 
 let latest;
 let updateUrl;
 let automationSettings;
 let automationDirty = false;
+let projectSnapshot = { projects: [], state: {} };
+let selectedProjectId;
+let projectPage = 0;
+const PROJECTS_PER_PAGE = 6;
 const apiUrl = "http://127.0.0.1:47831/api/usage";
 
 async function getSnapshot() {
@@ -181,6 +192,61 @@ function renderAutomation(snapshot) {
   elements.autoRun.disabled = state.status === "running" || state.status === "starting";
 }
 
+function selectedProject() { return projectSnapshot.projects.find((project) => project.id === selectedProjectId); }
+
+function renderProjectDetail() {
+  const project = selectedProject();
+  elements.projectEmpty.hidden = Boolean(project);
+  elements.projectSelected.hidden = !project;
+  if (!project) return;
+  elements.projectName.textContent = project.name;
+  elements.projectPath.textContent = project.path;
+  elements.projectPath.title = project.path;
+  elements.projectThreads.textContent = String(project.threadCount || 0);
+  elements.projectRoadmap.textContent = project.roadmapFile || "Missing";
+  elements.projectType.textContent = project.isWeb ? "Web project" : "Project";
+  elements.gitRecommendation.hidden = project.isGit !== false;
+  elements.projectBadges.replaceChildren();
+  for (const label of [project.source === "codex" ? "Codex project" : "Repository", project.isGit === false ? "No Git" : "Git", project.isWeb ? "Web" : "Local", project.roadmapFile ? "Roadmap" : "Needs roadmap"]) {
+    const badge = document.createElement("span"); badge.textContent = label; elements.projectBadges.append(badge);
+  }
+  document.querySelectorAll("[data-project-action]").forEach((button) => {
+    const requiresWeb = button.dataset.projectAction !== "roadmap";
+    button.disabled = projectSnapshot.state?.status === "running" || (requiresWeb && !project.isWeb);
+    button.title = requiresWeb && !project.isWeb ? "SEO actions are available for detected web projects" : "";
+  });
+}
+
+function renderProjects(snapshot) {
+  if (snapshot) projectSnapshot = snapshot;
+  const projects = projectSnapshot.projects || [];
+  const pageCount = Math.max(1, Math.ceil(projects.length / PROJECTS_PER_PAGE));
+  projectPage = Math.min(projectPage, pageCount - 1);
+  if (!projects.some((project) => project.id === selectedProjectId)) selectedProjectId = projects[0]?.id;
+  elements.projectCount.textContent = `${projects.length} managed project${projects.length === 1 ? "" : "s"}`;
+  elements.projectList.replaceChildren();
+  const pageProjects = projects.slice(projectPage * PROJECTS_PER_PAGE, (projectPage + 1) * PROJECTS_PER_PAGE);
+  if (!pageProjects.length) {
+    const empty = document.createElement("p"); empty.className = "empty-state"; empty.textContent = "Query Codex for its managed projects and local repository paths."; elements.projectList.append(empty);
+  }
+  for (const project of pageProjects) {
+    const button = document.createElement("button"); button.type = "button"; button.className = `project-item${project.id === selectedProjectId ? " active" : ""}`;
+    const name = document.createElement("strong"); name.textContent = project.name;
+    const path = document.createElement("small"); path.textContent = project.path; button.append(name, path);
+    button.addEventListener("click", () => { selectedProjectId = project.id; renderProjects(); });
+    elements.projectList.append(button);
+  }
+  elements.projectsPage.textContent = `Page ${projectPage + 1} of ${pageCount}`;
+  elements.projectsPrev.disabled = projectPage === 0;
+  elements.projectsNext.disabled = projectPage >= pageCount - 1;
+  const state = projectSnapshot.state || {};
+  elements.projectActionState.textContent = state.status || "Idle";
+  elements.projectActionMessage.textContent = state.message || "Select an action to begin.";
+  elements.scanProjects.disabled = state.status === "scanning" || state.status === "running";
+  elements.scanProjects.textContent = state.status === "scanning" ? "Scanning..." : "Scan projects";
+  renderProjectDetail();
+}
+
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => showView(tab.dataset.view)));
 elements.automationForm.addEventListener("input", () => { automationDirty = true; });
 elements.refresh.addEventListener("click", async () => {
@@ -203,11 +269,26 @@ elements.autoRun.addEventListener("click", async () => {
   try { await window.fuelGauge.saveAutomation(collectAutomationForm()); renderAutomation(await window.fuelGauge.runAutomation()); }
   catch (error) { elements.autoMessage.textContent = error.message; elements.autoRun.disabled = false; }
 });
+elements.scanProjects.addEventListener("click", async () => {
+  elements.scanProjects.disabled = true; elements.scanProjects.textContent = "Scanning...";
+  try { renderProjects(await window.fuelGauge.scanProjects()); }
+  catch (error) { elements.projectActionMessage.textContent = error.message; elements.scanProjects.disabled = false; elements.scanProjects.textContent = "Scan projects"; }
+});
+elements.projectsPrev.addEventListener("click", () => { projectPage = Math.max(0, projectPage - 1); renderProjects(); });
+elements.projectsNext.addEventListener("click", () => { projectPage += 1; renderProjects(); });
+document.querySelectorAll("[data-project-action]").forEach((button) => button.addEventListener("click", async () => {
+  if (!selectedProjectId) return;
+  try { renderProjects(await window.fuelGauge.runProjectAction(selectedProjectId, button.dataset.projectAction)); }
+  catch (error) { elements.projectActionMessage.textContent = error.message; }
+}));
+elements.openGitGuide.addEventListener("click", () => elements.gitGuide.showModal());
+elements.closeGitGuide.addEventListener("click", () => elements.gitGuide.close());
 
 if (window.fuelGauge?.onUpdate) window.fuelGauge.onUpdate(render);
 if (window.fuelGauge?.onUpdateResult) window.fuelGauge.onUpdateResult(renderUpdateResult);
 if (window.fuelGauge?.onAutomationUpdate) window.fuelGauge.onAutomationUpdate(renderAutomation);
-Promise.all([getSnapshot(), window.fuelGauge.getAutomation(), loadRoadmap()]).then(([snapshot, automation]) => { render(snapshot); renderAutomation(automation); })
+if (window.fuelGauge?.onProjectsUpdate) window.fuelGauge.onProjectsUpdate(renderProjects);
+Promise.all([getSnapshot(), window.fuelGauge.getAutomation(), window.fuelGauge.getProjects(), loadRoadmap()]).then(([snapshot, automation, projects]) => { render(snapshot); renderAutomation(automation); renderProjects(projects); })
   .catch((error) => { elements.status.textContent = "Offline"; elements.status.className = "status error"; elements.message.textContent = error.message; });
 setInterval(() => getSnapshot().then(render).catch(() => {}), 15_000);
 setInterval(() => latest && render(latest), 30_000);

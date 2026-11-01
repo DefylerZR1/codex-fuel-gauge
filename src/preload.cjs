@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld("fuelGauge", {
   getAutomation: () => ipcRenderer.invoke("automation:get"),
   saveAutomation: (settings) => ipcRenderer.invoke("automation:save", settings),
   runAutomation: () => ipcRenderer.invoke("automation:run"),
+  getProjects: () => ipcRenderer.invoke("projects:get"),
+  scanProjects: () => ipcRenderer.invoke("projects:scan"),
+  runProjectAction: (projectId, action) => ipcRenderer.invoke("projects:action", projectId, action),
   onUpdate: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
     ipcRenderer.on("telemetry:update", listener);
@@ -23,5 +26,10 @@ contextBridge.exposeInMainWorld("fuelGauge", {
     const listener = (_event, snapshot) => callback(snapshot);
     ipcRenderer.on("automation:update", listener);
     return () => ipcRenderer.removeListener("automation:update", listener);
+  },
+  onProjectsUpdate: (callback) => {
+    const listener = (_event, snapshot) => callback(snapshot);
+    ipcRenderer.on("projects:update", listener);
+    return () => ipcRenderer.removeListener("projects:update", listener);
   },
 });

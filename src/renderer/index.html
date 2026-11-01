@@ -14,6 +14,7 @@
         <nav class="tabs" aria-label="Fuel Gauge sections">
           <button class="tab active" data-view="gauge" type="button">Gauge</button>
           <button class="tab" data-view="roadmap" type="button">Roadmap</button>
+          <button class="tab" data-view="projects" type="button">Projects</button>
           <button class="tab" data-view="automation" type="button">Automation</button>
         </nav>
         <span id="status" class="status">Connecting</span>
@@ -43,6 +44,31 @@
         <aside><p class="panel-label">ROADMAP.MD</p><div id="roadmap-nav" class="roadmap-nav"></div></aside>
         <article class="roadmap-card"><h2 id="roadmap-title">Loading roadmap…</h2><div id="roadmap-content"></div></article>
       </section>
+
+      <section id="view-projects" class="view project-view">
+        <aside class="project-sidebar">
+          <div class="project-scan-header"><div><p class="panel-label">CODEX PROJECTS</p><small id="project-count">Not scanned</small></div><button id="scan-projects" type="button">Scan projects</button></div>
+          <div id="project-list" class="project-list"><p class="empty-state">Query Codex for its managed projects and local repository paths.</p></div>
+          <div class="project-pager"><button id="projects-prev" class="secondary" type="button">Previous</button><span id="projects-page">Page 1</span><button id="projects-next" class="secondary" type="button">Next</button></div>
+        </aside>
+        <section class="project-detail">
+          <div id="project-empty" class="project-empty"><h2>Select a project</h2><p>Build a project-specific roadmap, audit web SEO, or apply GSC-focused improvements.</p></div>
+          <div id="project-selected" hidden>
+            <div class="project-title-row"><div><p class="panel-label">SELECTED PROJECT</p><h2 id="project-name">—</h2><p id="project-path">—</p></div><div id="project-badges" class="project-badges"></div></div>
+            <div class="project-facts"><div><span>CODEX THREADS</span><strong id="project-threads">0</strong></div><div><span>ROADMAP</span><strong id="project-roadmap">Missing</strong></div><div><span>TYPE</span><strong id="project-type">Project</strong></div></div>
+            <div class="project-actions"><button data-project-action="roadmap" type="button">Build roadmap</button><button data-project-action="seo" class="secondary" type="button">SEO scan</button><button data-project-action="gsc" class="secondary" type="button">Optimize for GSC</button></div>
+            <div id="git-recommendation" class="git-recommendation" hidden><span>This project is not protected by Git.</span><button id="open-git-guide" class="secondary" type="button">Set up Git</button></div>
+            <section class="project-run-status"><span>PROJECT AGENT</span><strong id="project-action-state">Idle</strong><small id="project-action-message">Select an action to begin.</small></section>
+          </div>
+        </section>
+      </section>
+
+      <dialog id="git-guide">
+        <div class="guide-title"><div><p class="panel-label">VERSION CONTROL</p><h2>Set up Git safely</h2></div><button id="close-git-guide" class="secondary" type="button">Close</button></div>
+        <p>The strongest Codex workflow combines the Codex desktop app, VS Code with the Codex extension, and Git. Codex provides automation, VS Code keeps work anchored to the repository, and Git provides reviewable, recoverable history.</p>
+        <ol><li>Install Git for Windows from <b>git-scm.com</b> if the <code>git</code> command is unavailable.</li><li>Install VS Code, then install and sign in to the official OpenAI Codex extension.</li><li>Open the project folder in VS Code so Codex operates from the correct repository context.</li><li>In that folder run <code>git init</code>, then add an appropriate <code>.gitignore</code> before staging files.</li><li>Review with <code>git status</code>, then run <code>git add .</code> and <code>git commit -m "initial project snapshot"</code>.</li><li>Create a private GitHub repository and follow its “push an existing repository” instructions. Never commit secrets or environment files.</li></ol>
+        <p class="guide-note">Fuel Gauge can build a roadmap first, including project-specific setup and repository recommendations.</p>
+      </dialog>
 
       <section id="view-automation" class="view automation-view">
         <form id="automation-form">

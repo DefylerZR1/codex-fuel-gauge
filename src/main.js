@@ -1,7 +1,9 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import http from "node:http";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { AppServerClient } from "./app-server-client.js";
 
@@ -9,6 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const API_PORT = Number(process.env.CODEX_FUEL_GAUGE_PORT || 47831);
 const RELEASE_API = "https://api.github.com/repos/DefylerZR1/codex-fuel-gauge/releases/latest";
 const RELEASE_URL_PREFIX = "https://github.com/DefylerZR1/codex-fuel-gauge/releases/";
+const execFileAsync = promisify(execFile);
 let mainWindow;
 let tray;
 let apiServer;
@@ -16,6 +19,8 @@ let latestSnapshot = { status: { state: "starting", message: "Starting" }, data:
 let automationSettings;
 let automationTimer;
 let automationState = { status: "idle", message: "Automation is idle", history: [] };
+let projects = [];
+let projectActionState = { status: "idle", message: "Select a project action" };
 
 const DEFAULT_AUTOMATION_SETTINGS = {
   enabled: false,
@@ -58,11 +63,148 @@ const client = new AppServerClient({
     if (message.method === "turn/completed" && message.params?.turn?.id === automationState.turnId) {
       completeAutomationRun(message.params.turn).catch(() => {});
     }
+    if (message.method === "turn/completed" && message.params?.turn?.id === projectActionState.turnId) {
+      completeProjectAction(message.params.turn).catch(() => {});
+    }
   },
 });
 
 function automationSettingsPath() {
   return path.join(app.getPath("userData"), "automation-settings.json");
+}
+
+function projectsPath() {
+  return path.join(app.getPath("userData"), "projects.json");
+}
+
+function broadcastProjects() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("projects:update", { projects, state: projectActionState });
+  }
+}
+
+async function loadProjects() {
+  try { projects = JSON.parse(await fs.readFile(projectsPath(), "utf8")); } catch { projects = []; }
+  return { projects, state: projectActionState };
+}
+
+async function saveProjects() {
+  await fs.writeFile(projectsPath(), `${JSON.stringify(projects, null, 2)}\n`, "utf8");
+  broadcastProjects();
+}
+
+async function repositoryRoot(projectPath) {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", projectPath, "rev-parse", "--show-toplevel"], { windowsHide: true, timeout: 5_000 });
+    return path.resolve(stdout.trim());
+  } catch { return null; }
+}
+
+async function projectMetadata(projectPath, threadCount = 0, lastActivity = null, isGit = true, displayName = null, source = "repository") {
+  let packageData;
+  try { packageData = JSON.parse(await fs.readFile(path.join(projectPath, "package.json"), "utf8")); } catch { packageData = null; }
+  const dependencies = { ...(packageData?.dependencies || {}), ...(packageData?.devDependencies || {}) };
+  const webMarkers = ["react", "next", "vite", "astro", "@tanstack/react-router", "vue", "svelte", "nuxt"];
+  const isWeb = webMarkers.some((name) => name in dependencies)
+    || await fs.access(path.join(projectPath, "index.html")).then(() => true).catch(() => false)
+    || await fs.access(path.join(projectPath, "public")).then(() => true).catch(() => false);
+  let hasRoadmap = false;
+  let roadmapFile = null;
+  for (const name of ["ROADMAP.md", "PLANS.md", "GOALS.md"]) {
+    if (await fs.access(path.join(projectPath, name)).then(() => true).catch(() => false)) { hasRoadmap = true; roadmapFile = name; break; }
+  }
+  return { id: `${source}:${projectPath.toLowerCase()}`, name: displayName || packageData?.name || path.basename(projectPath), path: projectPath, source, isGit, isWeb, hasRoadmap, threadCount, lastActivity, roadmapFile: hasRoadmap ? roadmapFile : null };
+}
+
+async function scanManagedProjects() {
+  projectActionState = { status: "scanning", message: "Querying Codex for managed projects and repositories" };
+  broadcastProjects();
+  const nativeProjects = [];
+  let projectCursor = null;
+  do {
+    const result = await client.request("project/list", { cursor: projectCursor, limit: 100 });
+    nativeProjects.push(...(result.data || []));
+    projectCursor = result.nextCursor;
+  } while (projectCursor);
+  const cwdStats = new Map();
+  let cursor = null;
+  for (let page = 0; page < 5; page += 1) {
+    const result = await client.request("thread/list", { cursor, limit: 100, sortKey: "updated_at", sortDirection: "desc", sourceKinds: ["cli", "vscode", "exec", "appServer"] });
+    for (const thread of result.data || []) {
+      if (!thread.cwd || !path.isAbsolute(thread.cwd)) continue;
+      const key = path.resolve(thread.cwd).toLowerCase();
+      const current = cwdStats.get(key) || { path: path.resolve(thread.cwd), count: 0, lastActivity: 0 };
+      current.count += 1;
+      current.lastActivity = Math.max(current.lastActivity, Number(thread.updatedAt || thread.createdAt || 0));
+      cwdStats.set(key, current);
+    }
+    cursor = result.nextCursor;
+    if (!cursor) break;
+  }
+  if (automationSettings?.projectPath) {
+    const resolved = path.resolve(automationSettings.projectPath);
+    cwdStats.set(resolved.toLowerCase(), cwdStats.get(resolved.toLowerCase()) || { path: resolved, count: 0, lastActivity: 0 });
+  }
+  const foundPaths = new Map();
+  for (const stat of cwdStats.values()) {
+    const repository = await repositoryRoot(stat.path);
+    if (!repository) continue;
+    const projectPath = repository;
+    const key = projectPath.toLowerCase();
+    const existing = foundPaths.get(key) || { path: projectPath, isGit: Boolean(repository), count: 0, lastActivity: 0 };
+    existing.count += stat.count;
+    existing.lastActivity = Math.max(existing.lastActivity, stat.lastActivity);
+    foundPaths.set(key, existing);
+  }
+  const nativeEntries = await Promise.all(nativeProjects.flatMap((project) => (project.roots || []).map(async (root) => {
+    const repository = await repositoryRoot(root.path);
+    return projectMetadata(repository || root.path, 0, project.updatedAt || null, Boolean(repository), project.name, "codex");
+  })));
+  const repositoryEntries = await Promise.all([...foundPaths.values()].map((item) => projectMetadata(item.path, item.count, item.lastActivity || null, true, null, "repository")));
+  const uniqueProjects = new Map();
+  for (const entry of [...nativeEntries, ...repositoryEntries]) uniqueProjects.set(entry.id, entry);
+  projects = [...uniqueProjects.values()];
+  projects.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0) || a.name.localeCompare(b.name));
+  projectActionState = { status: "ready", message: `Found ${projects.length} Codex-managed projects` };
+  await saveProjects();
+  return { projects, state: projectActionState };
+}
+
+function projectActionPrompt(action, project) {
+  const common = "Read AGENTS.md and existing project documentation first. Preserve unrelated work. Do not push, publish, deploy, message anyone, spend money, or change external systems. Verify every claim and leave a concise result.";
+  if (action === "roadmap") return `${common}\n\nInspect this project deeply and create or update ROADMAP.md. Capture the product purpose, current architecture, completed capabilities, known issues, technical debt, security/accessibility/performance concerns, measurable objectives, prioritized milestones, dependencies, acceptance criteria, and the next highest-value tasks. Reconcile existing PLANS.md or GOALS.md instead of duplicating them. The roadmap must be specific to this repository and useful to future Codex automation.`;
+  if (action === "seo") return `${common}\n\nPerform a comprehensive technical and on-page SEO audit of this web project. Inspect rendered-route metadata, canonicals, robots directives, sitemap coverage, structured data, headings, internal links, duplicate or thin content, performance risks, accessibility signals, redirects, status behavior, and conversion paths. Write or update SEO_AUDIT.md with evidence, severity, affected routes/files, and prioritized fixes. Do not change production code during this scan.`;
+  return `${common}\n\nOptimize this web project for Google Search Console outcomes using available repository evidence and any local GSC exports. Review SEO_AUDIT.md if present, then implement and verify the highest-confidence fixes for indexing, canonicalization, sitemap quality, structured data, content differentiation, internal linking, crawlability, page experience, and search conversion. Do not invent GSC metrics or claim live Search Console access. Document changes and remaining GSC checks in SEO_AUDIT.md.`;
+}
+
+async function startProjectAction(projectId, action) {
+  if (!["roadmap", "seo", "gsc"].includes(action)) throw new Error("Unsupported project action");
+  if (projectActionState.status === "running") throw new Error("Another project action is already running");
+  const project = projects.find((entry) => entry.id === projectId);
+  if (!project) throw new Error("Select a scanned project first");
+  if ((action === "seo" || action === "gsc") && !project.isWeb) throw new Error("SEO actions are available only for detected web projects");
+  projectActionState = { status: "starting", message: `Starting ${action} for ${project.name}`, projectId, action };
+  broadcastProjects();
+  const threadResult = await client.request("thread/start", { cwd: project.path, approvalPolicy: "never", sandbox: "workspaceWrite", serviceName: "codex_fuel_gauge" });
+  const turnResult = await client.request("turn/start", {
+    threadId: threadResult.thread.id,
+    input: [{ type: "text", text: projectActionPrompt(action, project) }],
+    cwd: project.path,
+    approvalPolicy: "never",
+    sandboxPolicy: { type: "workspaceWrite", writableRoots: [project.path], networkAccess: false },
+    effort: "high",
+    summary: "concise",
+  });
+  projectActionState = { status: "running", message: `${action === "roadmap" ? "Roadmap assembly" : action === "seo" ? "SEO audit" : "GSC optimization"} is running for ${project.name}`, projectId, action, threadId: threadResult.thread.id, turnId: turnResult.turn.id };
+  broadcastProjects();
+  return { projects, state: projectActionState };
+}
+
+async function completeProjectAction(turn) {
+  const project = projects.find((entry) => entry.id === projectActionState.projectId);
+  if (project) Object.assign(project, await projectMetadata(project.path, project.threadCount, Math.floor(Date.now() / 1000), project.isGit, project.name, project.source));
+  projectActionState = { ...projectActionState, status: turn.status || "completed", message: `${projectActionState.action} finished for ${project?.name || "project"}`, completedAt: new Date().toISOString() };
+  await saveProjects();
 }
 
 function broadcastAutomation() {
@@ -374,7 +516,11 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   ipcMain.handle("automation:get", () => automationSnapshot());
   ipcMain.handle("automation:save", (_event, settings) => saveAutomationSettings(settings));
   ipcMain.handle("automation:run", () => startAutomationRun({ manual: true }));
+  ipcMain.handle("projects:get", () => ({ projects, state: projectActionState }));
+  ipcMain.handle("projects:scan", () => scanManagedProjects());
+  ipcMain.handle("projects:action", (_event, projectId, action) => startProjectAction(projectId, action));
   await loadAutomationSettings();
+  await loadProjects();
   startApi();
   createWindow();
   await client.start().catch((error) => {
